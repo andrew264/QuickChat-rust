@@ -2,6 +2,7 @@ use std::net::TcpStream;
 use std::process::exit;
 use std::thread;
 
+use env_logger::{Builder, Target};
 use log::{error, info};
 
 mod find_server;
@@ -10,9 +11,13 @@ mod server;
 mod client_handler;
 mod client;
 mod message;
+mod message_types;
 
 fn main() {
-    env_logger::init();
+    let mut builder = Builder::from_default_env();
+    builder.target(Target::Stdout);
+    builder.init();
+
     let mut ip = find_server::get_ip();
     if ip.is_none() {
         info!("Starting Server");

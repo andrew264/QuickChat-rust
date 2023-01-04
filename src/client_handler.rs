@@ -1,8 +1,10 @@
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
 
-use log::{debug, trace};
+use log::{error, trace};
 
+use crate::message::Message;
+use crate::message_types::MessageType;
 use crate::server;
 
 pub struct ClientHandler {
@@ -25,7 +27,7 @@ impl ClientHandler {
                     .try_clone()
                     .expect("Failed to create client BufWriter")),
 
-            username: "".to_string(),
+            username: String::new(),
 
             client_name: client_socket.peer_addr().unwrap().to_string(),
         }
@@ -35,22 +37,77 @@ impl ClientHandler {
         let mut buf = [0u8; 15000];
         loop {
             let amt = self.buffer_reader.read(&mut buf)?;
-            let message = String::from_utf8_lossy(&buf[..amt]);
-            debug!("Received {} from {}", message, self.client_name);
-            self.send_to_other_clients(&buf[..amt]);
+            let message = Message::new_from_bytes(&buf[..amt]);
+            trace!("Received {}", message.to_string());
+            match message.get_type() {
+                MessageType::Message | MessageType::Join | MessageType::Leave => {
+                    self.send_to_other_clients(message);
+                }
+                MessageType::SetUsername => {
+                    let username = message.get_username().to_string();
+                    if self.is_username_available(username.to_string()) {
+                        self.username = username;
+                        self.set_username(self.username.clone());
+                        trace!("Username set to {}", self.username);
+                        self.send_to_client({
+                            let mut x = Message::new(self.username.clone(),
+                                                     "Username set".to_string(),
+                                                     None);
+                            x.set_type(MessageType::UsernameAvailable);
+                            x
+                        }
+                        );
+                    } else {
+                        trace!("Username {} is not available", username);
+                        self.send_to_client(Message::new_from_type(MessageType::UsernameTaken));
+                    }
+                }
+                _ => {
+                    error!("Unknown message type {}", message.get_type());
+                }
+            }
             buf = [0u8; 15000];
         }
     }
 
-    fn send_to_other_clients(&mut self, message: &[u8]) {
+    fn send_to_client(&mut self, message: Message) {
+        trace!("Sending {}", message.to_string());
+        self.buffer_writer.write(&message.to_bytes())
+            .expect("Failed to write to buffer");
+        self.buffer_writer.flush()
+            .expect("Failed to flush buffer");
+    }
+
+    fn send_to_other_clients(&mut self, message: Message) {
         for client in server::CLIENT_HANDLERS.lock().unwrap().iter_mut() {
             if client.client_name == self.client_name {
                 trace!("Skipping sending message to {}", client.client_name);
                 continue;
             }
             trace!("Sending message to client: {}", client.client_name);
-            client.buffer_writer.write(message).expect("Failed to send message");
+            client.buffer_writer.write(&*message.to_bytes()).expect("Failed to send message");
             client.buffer_writer.flush().expect("Failed to flush message");
+        }
+    }
+
+    fn is_username_available(&self, username: String) -> bool {
+        for client in server::CLIENT_HANDLERS.lock().unwrap().iter() {
+            trace!("Checking username {} against {}", username, client.username);
+            trace!("{}", client);
+            if client.username.eq(&username) {
+                trace!("Username {} is not available", username);
+                return false;
+            }
+        }
+        trace!("Username {} is available", username);
+        true
+    }
+
+    fn set_username(&mut self, username: String) {
+        for client in server::CLIENT_HANDLERS.lock().unwrap().iter_mut() {
+            if client.client_name == self.client_name {
+                client.username = username.clone();
+            }
         }
     }
 
@@ -68,6 +125,6 @@ impl ClientHandler {
 
 impl std::fmt::Display for ClientHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.client_name)
+        write!(f, "Client: {}\t Username: {}", self.client_name, self.username)
     }
 }
