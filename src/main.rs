@@ -9,6 +9,7 @@ mod server_discovery_thread;
 mod server;
 mod client_handler;
 mod client;
+mod message;
 
 fn main() {
     env_logger::init();
@@ -20,8 +21,8 @@ fn main() {
             s.run().unwrap();
         });
 
-        // sleep for 5 seconds
-        thread::sleep(std::time::Duration::from_secs(5));
+        // sleep for 2 seconds
+        thread::sleep(std::time::Duration::from_secs(2));
         ip = find_server::get_ip();
         // check if ip is none
         if ip.is_none() {
