@@ -36,16 +36,18 @@ impl Client {
         trace!("Client is running");
         self.receive_from_server();
         self.set_username();
-        let mut msg = String::new();
         let username = self.username.clone();
 
         // send join message
-        let mut join_message = Message::new(username.clone(),
-                                            "joined the chat".to_string(),
-                                            None);
-        join_message.set_type(MessageType::Join);
-        self.send_message(join_message);
+        self.send_message({
+            let mut x = Message::new(username.clone(),
+                                     "joined the chat".to_string(),
+                                     None);
+            x.set_type(MessageType::Join);
+            x
+        });
 
+        let mut msg = String::new();
         loop {
             msg.clear();
             std::io::stdin()
