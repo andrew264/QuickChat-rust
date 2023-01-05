@@ -50,7 +50,7 @@ impl Server {
                     CLIENT_HANDLERS.lock().unwrap().push_back(client_handler.clone());
                     trace!("Client handler added to CLIENT_HANDLERS");
                     thread::Builder::new()
-                        .name("Starting ClientHandler Thread ".to_string()
+                        .name("ClientHandler Thread ".to_string()
                             + &client_handler.client_name)
                         .spawn(move || {
                             trace!("ClientHandler thread started");

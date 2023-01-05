@@ -40,11 +40,10 @@ impl Client {
 
         // send join message
         self.send_message({
-            let mut x = Message::new(username.clone(),
-                                     "joined the chat".to_string(),
-                                     None);
-            x.set_type(MessageType::Join);
-            x
+            &Message::builder()
+                .username(&username)
+                .message_type(MessageType::Join)
+                .build()
         });
 
         let mut msg = String::new();
@@ -56,10 +55,10 @@ impl Client {
                 .to_string();
             msg = msg.trim().to_string();
 
-            let msg: Message = Message::new(username.clone(),
-                                            msg.clone(),
-                                            None);
-            self.send_message(msg);
+            self.send_message(&Message::builder()
+                .username(&username)
+                .message(&msg)
+                .build());
         }
     }
 
@@ -91,7 +90,7 @@ impl Client {
             self.set_username();
             return;
         }
-        if self.check_username_availability(username.clone()) {
+        if self.check_username_availability(&username) {
             println!("Username set to {}", self.username);
             return;
         } else {
@@ -101,13 +100,13 @@ impl Client {
         }
     }
 
-    fn check_username_availability(&mut self, username: String) -> bool {
-        let mut msg = Message::new(username.to_string(),
-                                   String::new(),
-                                   None);
-
-        msg.set_type(MessageType::SetUsername);
-        self.send_message(msg);
+    fn check_username_availability(&mut self, username: &String) -> bool {
+        self.send_message(
+            &Message::builder()
+                .username(username)
+                .message_type(MessageType::SetUsername)
+                .build()
+        );
 
         while self.receiver.is_none() {
             trace!("Waiting for response from server");
@@ -144,7 +143,7 @@ impl Client {
             loop {
                 let amt = buffer_reader.read(&mut buf)
                     .expect("Failed to read from server");
-                let message = Message::new_from_bytes(&buf[..amt]);
+                let message = Message::from_bytes(&buf[..amt]);
                 buf = [0u8; 15000];
                 trace!("Received {}", message.to_string());
                 match message.get_type() {
@@ -163,7 +162,7 @@ impl Client {
         }).unwrap()
     }
 
-    fn send_message(&mut self, msg: Message) {
+    fn send_message(&mut self, msg: &Message) {
         trace!("Sending {}", msg.to_string());
 
         self.buffer_writer.write(&*msg.to_bytes())

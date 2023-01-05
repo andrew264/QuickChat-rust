@@ -37,29 +37,30 @@ impl ClientHandler {
         let mut buf = [0u8; 15000];
         loop {
             let amt = self.buffer_reader.read(&mut buf)?;
-            let message = Message::new_from_bytes(&buf[..amt]);
+            let message = Message::from_bytes(&buf[..amt]);
             trace!("Received {}", message.to_string());
             match message.get_type() {
                 MessageType::Message | MessageType::Join | MessageType::Leave => {
-                    self.send_to_other_clients(message);
+                    self.send_to_other_clients(&message);
                 }
                 MessageType::SetUsername => {
                     let username = message.get_username().to_string();
                     if self.is_username_available(username.to_string()) {
-                        self.username = username;
-                        self.set_username(self.username.clone());
+                        self.set_username(&username);
                         trace!("Username set to {}", self.username);
                         self.send_to_client({
-                            let mut x = Message::new(self.username.clone(),
-                                                     "Username set".to_string(),
-                                                     None);
-                            x.set_type(MessageType::UsernameAvailable);
-                            x
+                            &Message::builder()
+                                .username(&username)
+                                .message_type(MessageType::UsernameAvailable)
+                                .build()
                         }
                         );
                     } else {
                         trace!("Username {} is not available", username);
-                        self.send_to_client(Message::new_from_type(MessageType::UsernameTaken));
+                        self.send_to_client(&Message::builder()
+                            .username(&self.username)
+                            .message_type(MessageType::UsernameTaken)
+                            .build());
                     }
                 }
                 _ => {
@@ -70,7 +71,7 @@ impl ClientHandler {
         }
     }
 
-    fn send_to_client(&mut self, message: Message) {
+    fn send_to_client(&mut self, message: &Message) {
         trace!("Sending {}", message.to_string());
         self.buffer_writer.write(&message.to_bytes())
             .expect("Failed to write to buffer");
@@ -78,15 +79,14 @@ impl ClientHandler {
             .expect("Failed to flush buffer");
     }
 
-    fn send_to_other_clients(&mut self, message: Message) {
+    fn send_to_other_clients(&mut self, message: &Message) {
         for client in server::CLIENT_HANDLERS.lock().unwrap().iter_mut() {
-            if client.client_name == self.client_name {
-                trace!("Skipping sending message to {}", client.client_name);
+            if self == client {
+                trace!("Skipped sending message to {}", client.client_name);
                 continue;
             }
             trace!("Sending message to client: {}", client.client_name);
-            client.buffer_writer.write(&*message.to_bytes()).expect("Failed to send message");
-            client.buffer_writer.flush().expect("Failed to flush message");
+            client.send_to_client(&message);
         }
     }
 
@@ -103,15 +103,24 @@ impl ClientHandler {
         true
     }
 
-    fn set_username(&mut self, username: String) {
+    fn set_username(&mut self, username: &String) {
+        self.username = username.clone();
         for client in server::CLIENT_HANDLERS.lock().unwrap().iter_mut() {
-            if client.client_name == self.client_name {
+            if self == client {
                 client.username = username.clone();
             }
         }
     }
+}
 
-    pub fn clone(&self) -> Self {
+impl std::fmt::Display for ClientHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Client: {}\t Username: {}", self.client_name, self.username)
+    }
+}
+
+impl Clone for ClientHandler {
+    fn clone(&self) -> Self {
         Self {
             buffer_reader: BufReader::new(
                 self.buffer_reader.get_ref().try_clone().expect("Failed to create client BufReader")),
@@ -123,8 +132,10 @@ impl ClientHandler {
     }
 }
 
-impl std::fmt::Display for ClientHandler {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Client: {}\t Username: {}", self.client_name, self.username)
+impl PartialEq<Self> for ClientHandler {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_name == other.client_name
     }
 }
+
+impl Eq for ClientHandler {}
