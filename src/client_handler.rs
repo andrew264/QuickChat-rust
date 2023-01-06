@@ -1,11 +1,11 @@
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
 
-use log::{error, trace};
+use log::{debug, error, trace};
 
+use crate::server;
 use crate::message::Message;
 use crate::message_types::MessageType;
-use crate::server;
 
 pub struct ClientHandler {
     buffer_reader: BufReader<TcpStream>,
@@ -33,10 +33,21 @@ impl ClientHandler {
         }
     }
 
-    pub unsafe fn run(mut self) -> Result<(), std::io::Error> {
+    pub unsafe fn run(mut self) {
         let mut buf = [0u8; 15000];
         loop {
-            let amt = self.buffer_reader.read(&mut buf)?;
+            let result_amt = self.buffer_reader.read(&mut buf);
+            let amt = match result_amt {
+                Ok(amt) => amt,
+                Err(_) => {
+                    debug!("Failed to read from client. Probably disconnected.");
+                    break;
+                }
+            };
+            if buf[..amt].is_empty() {
+                debug!("Client {} disconnected.", self.client_name);
+                break;
+            }
             let message = Message::from_bytes(&buf[..amt]);
             trace!("Received {}", message.to_string());
             match message.get_type() {
@@ -69,14 +80,27 @@ impl ClientHandler {
             }
             buf = [0u8; 15000];
         }
+        self.send_to_other_clients(&Message::builder()
+            .username(&self.username)
+            .message_type(MessageType::Leave)
+            .build());
+        server::remove_client(&self.client_name);
+        drop(self);
     }
 
     fn send_to_client(&mut self, message: &Message) {
         trace!("Sending {}", message.to_string());
-        self.buffer_writer.write(&message.to_bytes())
-            .expect("Failed to write to buffer");
-        self.buffer_writer.flush()
-            .expect("Failed to flush buffer");
+        let _ = match self.buffer_writer.write(&message.to_bytes()) {
+            Ok(_) => {
+                let _ = match self.buffer_writer.flush() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Failed to flush {}'s buffer: {}", self.client_name, e);
+                    }
+                };
+            }
+            _ => {}
+        };
     }
 
     fn send_to_other_clients(&mut self, message: &Message) {

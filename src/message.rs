@@ -24,6 +24,10 @@ impl Message {
 
     pub(crate) fn to_string(&self) -> String {
         match MessageType::from_int(self.type_) {
+            MessageType::Ping => {
+                format!("Ping: {}",
+                        (Local::now() - Local.timestamp_nanos(self.timestamp)).num_milliseconds())
+            }
             MessageType::Message => {
                 format!(
                     "[{} @ {}]: {}",
@@ -53,13 +57,13 @@ impl Message {
             MessageType::UsernameAvailable => {
                 format!(
                     "[SERVER]: {} is available",
-                    self.message
+                    self.username
                 )
             }
             MessageType::UsernameTaken => {
                 format!(
                     "[SERVER]: {} is not available",
-                    self.message
+                    self.username
                 )
             }
         }
@@ -83,8 +87,7 @@ impl Message {
 
     pub(crate) fn format_timestamp(&self) -> String {
         let timestamp = self.get_timestamp();
-        let dt = Local.timestamp_opt(timestamp, 0)
-            .unwrap();
+        let dt = Local.timestamp_nanos(timestamp);
         dt.format("%I:%M:%S %p").to_string()
     }
 
@@ -129,7 +132,7 @@ impl MessageBuilder {
             message: self.message.clone(),
             timestamp: {
                 let now = Local::now();
-                now.timestamp()
+                now.timestamp_nanos()
             },
             type_: self.type_.as_int(),
         }

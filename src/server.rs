@@ -54,9 +54,9 @@ impl Server {
                             + &client_handler.client_name)
                         .spawn(move || {
                             trace!("ClientHandler thread started");
-                            client_handler.run().unwrap();
+                            client_handler.run();
                         })
-                        .expect("Failed to spawn client handler thread");
+                        .expect("Failed to spawn ClientHandler thread");
                 }
                 Err(e) => {
                     error!("Error: {}", e);
@@ -66,5 +66,17 @@ impl Server {
         }
 
         Ok(())
+    }
+}
+
+pub fn remove_client(client_name: &String) {
+    trace!("Removing client {}", client_name);
+    let mut client_handlers = CLIENT_HANDLERS.lock().unwrap();
+    for (index, client) in client_handlers.iter_mut().enumerate() {
+        if client.client_name.eq(client_name) {
+            trace!("Removed client: {}", client_handlers[index]);
+            client_handlers.remove(index);
+            break;
+        }
     }
 }

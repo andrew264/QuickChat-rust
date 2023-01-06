@@ -1,10 +1,10 @@
+use std::{io, thread};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
 use std::sync::mpsc::{Receiver, sync_channel};
-use std::thread;
 use std::thread::JoinHandle;
 
-use log::{error, trace};
+use log::{debug, error, trace};
 
 use crate::message::Message;
 use crate::message_types::MessageType;
@@ -49,11 +49,15 @@ impl Client {
         let mut msg = String::new();
         loop {
             msg.clear();
-            std::io::stdin()
+            io::stdin()
                 .read_line(&mut msg)
                 .expect("Failed to read line")
                 .to_string();
             msg = msg.trim().to_string();
+            if msg == "exit" {
+                self.server_socket.shutdown(std::net::Shutdown::Both).unwrap();
+                break;
+            }
 
             self.send_message(&Message::builder()
                 .username(&username)
@@ -63,9 +67,10 @@ impl Client {
     }
 
     fn set_username(&mut self) {
-        println!("Enter username: ");
+        print!("Enter username: ");
+        io::stdout().flush().expect("Failed to flush stdout");
         let mut username = String::new();
-        std::io::stdin()
+        io::stdin()
             .read_line(&mut username)
             .unwrap()
             .to_string();
@@ -141,8 +146,15 @@ impl Client {
         thread::Builder::new().name("receive_from_server".to_string()).spawn(move || {
             trace!("receive_from_server thread started");
             loop {
-                let amt = buffer_reader.read(&mut buf)
-                    .expect("Failed to read from server");
+                let result_amt = buffer_reader.read(&mut buf);
+                let amt = match result_amt {
+                    Ok(amt) => amt,
+                    Err(_) => {
+                        debug!("Socket is closed, exiting now...");
+                        break;
+                    }
+                };
+
                 let message = Message::from_bytes(&buf[..amt]);
                 buf = [0u8; 15000];
                 trace!("Received {}", message.to_string());

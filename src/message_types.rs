@@ -1,4 +1,5 @@
 pub(crate) enum MessageType {
+    Ping,
     Join,
     Leave,
     SetUsername,
@@ -10,6 +11,7 @@ pub(crate) enum MessageType {
 impl MessageType {
     pub(crate) fn as_int(&self) -> i32 {
         match self {
+            MessageType::Ping => { 0 }
             MessageType::Join => { 1 }
             MessageType::Leave => { 2 }
             MessageType::SetUsername => { 3 }
@@ -20,6 +22,7 @@ impl MessageType {
     }
     pub(crate) fn from_int(i: i32) -> MessageType {
         match i {
+            0 => { MessageType::Ping }
             1 => { MessageType::Join }
             2 => { MessageType::Leave }
             3 => { MessageType::SetUsername }
@@ -32,6 +35,7 @@ impl MessageType {
 
     fn as_str(&self) -> String {
         match self {
+            MessageType::Ping => { "Ping".to_string() }
             MessageType::Join => { "Join".to_string() }
             MessageType::Leave => { "Leave".to_string() }
             MessageType::SetUsername => { "SetUsername".to_string() }
