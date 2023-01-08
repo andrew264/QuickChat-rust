@@ -1,13 +1,21 @@
 use std::{io, thread};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
+use std::process::exit;
+use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, sync_channel};
 use std::thread::JoinHandle;
 
+use lazy_static::lazy_static;
 use log::{debug, error, trace};
 
+use crate::client_handler::Messages;
 use crate::message::Message;
 use crate::message_types::MessageType;
+
+lazy_static! {
+    static ref MESSAGES: Messages = Arc::new(Mutex::new(Vec::new()));
+}
 
 pub(crate) struct Client {
     username: String,
@@ -37,6 +45,9 @@ impl Client {
         self.receive_from_server();
         self.set_username();
         let username = self.username.clone();
+
+        // fetch messages from server
+        self.fetch_messages();
 
         // send join message
         self.send_message({
@@ -134,52 +145,86 @@ impl Client {
         }
     }
 
+    fn fetch_messages(&mut self) {
+        // fetch messages from server
+        self.send_message(
+            &Message::builder()
+                .username(&self.username)
+                .message_type(MessageType::FetchMessages)
+                .build()
+        );
+        // wait for messages to be fetched
+        while self.receiver.is_none() {
+            trace!("Waiting for response from server");
+            thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let received_message = self.receiver.as_ref().unwrap().recv().unwrap();
+
+        if received_message.get_type() == MessageType::ClearToSend {
+            return;
+        } else {
+            error!("Unexpected message type {}", received_message.to_string());
+            exit(1);
+        }
+    }
+
 
     fn receive_from_server(&mut self) -> JoinHandle<()> {
         let mut buf = [0u8; 15000];
         let mut buffer_reader = BufReader::new(
-            self.server_socket.try_clone().expect("Failed to create client BufReader"));
+            self.server_socket.try_clone()
+                .expect("Failed to create client BufReader"));
 
         trace!("Starting receive_from_server thread");
         let (sender, receiver) = sync_channel(0);
         self.receiver = Some(receiver);
-        thread::Builder::new().name("receive_from_server".to_string()).spawn(move || {
-            trace!("receive_from_server thread started");
-            loop {
-                let result_amt = buffer_reader.read(&mut buf);
-                let amt = match result_amt {
-                    Ok(amt) => amt,
-                    Err(_) => {
-                        debug!("Socket is closed, exiting now...");
-                        break;
-                    }
-                };
+        thread::Builder::new()
+            .name("Message Receving Thread".to_string())
+            .spawn(move || {
+                trace!("Message Receving Thread started");
+                loop {
+                    let result_amt = buffer_reader.read(&mut buf);
+                    let amt = match result_amt {
+                        Ok(amt) => amt,
+                        Err(_) => {
+                            debug!("Socket is closed, exiting now...");
+                            exit(0);
+                        }
+                    };
 
-                let message = Message::from_bytes(&buf[..amt]);
-                buf = [0u8; 15000];
-                trace!("Received {}", message.to_string());
-                match message.get_type() {
-                    MessageType::Message | MessageType::Join | MessageType::Leave => {
-                        println!("{}", message.to_string());
-                    }
-                    MessageType::UsernameAvailable | MessageType::UsernameTaken => {
-                        sender.send(message).unwrap();
-                        trace!("Sent message to main thread");
-                    }
-                    _ => {
-                        error!("Unknown message type {}", message.get_type());
+                    let messages = Message::from_bytes(&buf[..amt]);
+                    MESSAGES.lock().unwrap().extend(messages.clone().into_iter());
+                    buf = [0u8; 15000];
+                    for message in messages {
+                        trace!("Received {}", message.to_string());
+                        match message.get_type() {
+                            MessageType::Message | MessageType::Join | MessageType::Leave => {
+                                println!("{}", message.to_string());
+                            }
+                            MessageType::UsernameAvailable | MessageType::UsernameTaken | MessageType::ClearToSend => {
+                                sender.send(message).unwrap();
+                                trace!("Sent message to main thread");
+                            }
+                            _ => {
+                                error!("Unknown message type {}", message.get_type());
+                            }
+                        }
                     }
                 }
-            }
-        }).unwrap()
+            }).unwrap()
     }
 
     fn send_message(&mut self, msg: &Message) {
         trace!("Sending {}", msg.to_string());
+        MESSAGES.lock().unwrap().push(msg.clone());
 
-        self.buffer_writer.write(&*msg.to_bytes())
-            .expect("Failed to send message");
-        self.buffer_writer.flush()
-            .expect("Failed to flush message");
+        let _ = match self.buffer_writer
+            .write(&*msg.to_bytes())
+            .and_then(|_| self.buffer_writer.flush()) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Failed to flush buffer: {}", e);
+            }
+        };
     }
 }

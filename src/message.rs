@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::message_types::MessageType;
 
+static MESSAGE_SEPERATOR: &str = "::END::";
+
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Message {
     username: String,
@@ -16,10 +18,12 @@ impl Message {
         MessageBuilder::new()
     }
 
-    pub(crate) fn from_bytes(bytes: &[u8]) -> Message {
-        let msg = String::from_utf8_lossy(&bytes);
-        let msg: Message = serde_json::from_str(&msg).unwrap();
-        msg
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Vec<Message> {
+        let str_msg = String::from_utf8_lossy(&bytes);
+        str_msg.split(MESSAGE_SEPERATOR)
+            .filter(|s| !s.is_empty())
+            .map(|s| serde_json::from_str::<Message>(s).unwrap())
+            .collect::<Vec<Message>>()
     }
 
     pub(crate) fn to_string(&self) -> String {
@@ -66,11 +70,14 @@ impl Message {
                     self.username
                 )
             }
+            _ => {
+                format!("{}", MessageType::from_int(self.type_))
+            }
         }
     }
 
     pub(crate) fn to_bytes(&self) -> Vec<u8> {
-        self.to_json().as_bytes().to_vec()
+        (self.to_json() + MESSAGE_SEPERATOR).as_bytes().to_vec()
     }
 
     fn to_json(&self) -> String {
@@ -93,6 +100,17 @@ impl Message {
 
     pub(crate) fn get_type(&self) -> MessageType {
         MessageType::from_int(self.type_)
+    }
+}
+
+impl Clone for Message {
+    fn clone(&self) -> Self {
+        Message {
+            username: self.username.clone(),
+            message: self.message.clone(),
+            timestamp: self.timestamp,
+            type_: self.type_,
+        }
     }
 }
 

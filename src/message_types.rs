@@ -5,6 +5,8 @@ pub(crate) enum MessageType {
     SetUsername,
     UsernameTaken,
     UsernameAvailable,
+    FetchMessages,
+    ClearToSend,
     Message,
 }
 
@@ -17,6 +19,8 @@ impl MessageType {
             MessageType::SetUsername => { 3 }
             MessageType::UsernameTaken => { 4 }
             MessageType::UsernameAvailable => { 5 }
+            MessageType::FetchMessages => { 6 }
+            MessageType::ClearToSend => { 7 }
             MessageType::Message => { 32 }
         }
     }
@@ -28,6 +32,8 @@ impl MessageType {
             3 => { MessageType::SetUsername }
             4 => { MessageType::UsernameTaken }
             5 => { MessageType::UsernameAvailable }
+            6 => { MessageType::FetchMessages }
+            7 => { MessageType::ClearToSend }
             32 => { MessageType::Message }
             _ => { MessageType::Message }
         }
@@ -41,6 +47,8 @@ impl MessageType {
             MessageType::SetUsername => { "SetUsername".to_string() }
             MessageType::UsernameTaken => { "UsernameTaken".to_string() }
             MessageType::UsernameAvailable => { "UsernameAvailable".to_string() }
+            MessageType::FetchMessages => { "FetchMessages".to_string() }
+            MessageType::ClearToSend => { "ClearToSend".to_string() }
             MessageType::Message => { "Message".to_string() }
         }
     }
@@ -49,5 +57,11 @@ impl MessageType {
 impl std::fmt::Display for MessageType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl PartialEq for MessageType {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_int() == other.as_int()
     }
 }

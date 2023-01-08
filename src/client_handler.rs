@@ -1,6 +1,8 @@
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
+use std::sync::{Arc, Mutex};
 
+use lazy_static::lazy_static;
 use log::{debug, error, trace};
 
 use crate::server;
@@ -12,6 +14,12 @@ pub struct ClientHandler {
     buffer_writer: BufWriter<TcpStream>,
     username: String,
     pub(crate) client_name: String,
+}
+
+pub(crate) type Messages = Arc<Mutex<Vec<Message>>>;
+
+lazy_static! {
+    static ref MESSAGES: Messages = Arc::new(Mutex::new(Vec::new()));
 }
 
 impl ClientHandler {
@@ -48,34 +56,39 @@ impl ClientHandler {
                 debug!("Client {} disconnected.", self.client_name);
                 break;
             }
-            let message = Message::from_bytes(&buf[..amt]);
-            trace!("Received {}", message.to_string());
-            match message.get_type() {
-                MessageType::Message | MessageType::Join | MessageType::Leave => {
-                    self.send_to_other_clients(&message);
-                }
-                MessageType::SetUsername => {
-                    let username = message.get_username().to_string();
-                    if self.is_username_available(username.to_string()) {
-                        self.set_username(&username);
-                        trace!("Username set to {}", self.username);
-                        self.send_to_client({
-                            &Message::builder()
-                                .username(&username)
-                                .message_type(MessageType::UsernameAvailable)
-                                .build()
-                        }
-                        );
-                    } else {
-                        trace!("Username {} is not available", username);
-                        self.send_to_client(&Message::builder()
-                            .username(&self.username)
-                            .message_type(MessageType::UsernameTaken)
-                            .build());
+            let messages = Message::from_bytes(&buf[..amt]);
+            for message in messages {
+                trace!("Received {}", message.to_string());
+                match message.get_type() {
+                    MessageType::Message | MessageType::Join | MessageType::Leave => {
+                        self.send_to_other_clients(&message);
                     }
-                }
-                _ => {
-                    error!("Unknown message type {}", message.get_type());
+                    MessageType::SetUsername => {
+                        let username = message.get_username().to_string();
+                        if self.is_username_available(username.to_string()) {
+                            self.set_username(&username);
+                            trace!("Username set to {}", self.username);
+                            self.send_to_client({
+                                &Message::builder()
+                                    .username(&username)
+                                    .message_type(MessageType::UsernameAvailable)
+                                    .build()
+                            }
+                            );
+                        } else {
+                            trace!("Username {} is not available", username);
+                            self.send_to_client(&Message::builder()
+                                .username(&self.username)
+                                .message_type(MessageType::UsernameTaken)
+                                .build());
+                        }
+                    }
+                    MessageType::FetchMessages => {
+                        self.sync_messages();
+                    }
+                    _ => {
+                        error!("Unknown message type {}", message.get_type());
+                    }
                 }
             }
             buf = [0u8; 15000];
@@ -90,20 +103,18 @@ impl ClientHandler {
 
     fn send_to_client(&mut self, message: &Message) {
         trace!("Sending {}", message.to_string());
-        let _ = match self.buffer_writer.write(&message.to_bytes()) {
-            Ok(_) => {
-                let _ = match self.buffer_writer.flush() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Failed to flush {}'s buffer: {}", self.client_name, e);
-                    }
-                };
+        let _ = match self.buffer_writer
+            .write(&*message.to_bytes())
+            .and_then(|_| self.buffer_writer.flush()) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Failed to flush {}'s buffer: {}", self.client_name, e);
             }
-            _ => {}
         };
     }
 
     fn send_to_other_clients(&mut self, message: &Message) {
+        MESSAGES.lock().unwrap().push(message.clone());
         for client in server::CLIENT_HANDLERS.lock().unwrap().iter_mut() {
             if self == client {
                 trace!("Skipped sending message to {}", client.client_name);
@@ -112,6 +123,18 @@ impl ClientHandler {
             trace!("Sending message to client: {}", client.client_name);
             client.send_to_client(&message);
         }
+    }
+
+    fn sync_messages(&mut self) {
+        trace!("Syncing messages with {}", self.client_name);
+        let messaages = MESSAGES.lock().unwrap();
+        for message in messaages.iter() {
+            self.send_to_client(&message);
+        }
+        trace!("Synced messages {} with {}", messaages.len(), self.client_name);
+        self.send_to_client(&Message::builder()
+            .message_type(MessageType::ClearToSend)
+            .build());
     }
 
     fn is_username_available(&self, username: String) -> bool {
