@@ -6,7 +6,7 @@ use std::thread::{sleep, spawn};
 use std::time::Duration;
 
 use lazy_static::lazy_static;
-use log::{error, info, trace};
+use log::{debug, error, trace};
 
 use crate::client_handler::ClientHandler;
 use crate::server_discovery_thread::DiscoveryThread;
@@ -27,7 +27,7 @@ impl Server {
     pub fn new() -> Result<Self, std::io::Error> {
         let server_socket = TcpListener::bind(("0.0.0.0", SERVER_PORT))?;
         // Bind to all interfaces
-        info!("Server listening on: {:?}", server_socket.local_addr().unwrap());
+        debug!("Server listening on: {:?}", server_socket.local_addr().unwrap());
         Ok(Self {
             server_socket,
         })
@@ -44,7 +44,7 @@ impl Server {
         for client_socket in self.server_socket.incoming() {
             match client_socket {
                 Ok(client_socket) => unsafe {
-                    info!("New connection: {}", client_socket.peer_addr().unwrap());
+                    debug!("New connection: {}", client_socket.peer_addr().unwrap());
                     let client_handler = ClientHandler::new(client_socket);
                     trace!("New client handler {} created", client_handler);
                     CLIENT_HANDLERS.lock().unwrap().push_back(client_handler.clone());

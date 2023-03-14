@@ -8,6 +8,7 @@ use std::thread::JoinHandle;
 
 use lazy_static::lazy_static;
 use log::{debug, error, trace};
+use serde_json::json;
 
 use crate::client_handler::Messages;
 use crate::message::Message;
@@ -217,9 +218,11 @@ impl Client {
     fn send_message(&mut self, msg: &Message) {
         trace!("Sending {}", msg.to_string());
         MESSAGES.lock().unwrap().push(msg.clone());
+        let msg = msg.clone();
+        let msg_arr = json!([msg]).to_string().into_bytes();
 
         let _ = match self.buffer_writer
-            .write(&*msg.to_bytes())
+            .write(&msg_arr)
             .and_then(|_| self.buffer_writer.flush()) {
             Ok(_) => {}
             Err(e) => {

@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use log::{debug, info, trace};
 
+use crate::adapter;
+
 pub(crate) fn get_ip() -> Option<IpAddr> {
     const REQUEST_MESSAGE: &[u8] = "DISCOVER_CHAT_SERVER_REQUEST".as_bytes();
 
@@ -19,23 +21,14 @@ pub(crate) fn get_ip() -> Option<IpAddr> {
     debug!("Broadcasting to: {:?}\n", broadcast_addr);
     socket.send_to(REQUEST_MESSAGE, broadcast_addr).expect("Failed to send broadcast");
 
-    // Broadcast the message over all the network interfaces
-    for iface in pnet_datalink::interfaces() {
-
-        // Skip loopback interfaces & interfaces with no IP
-        if iface.is_loopback() || socket.local_addr().unwrap().ip() == iface.ips[0].ip() {
-            debug!("Skipping interface: {:?}", iface.description);
-            continue;
-        }
-
-        // Iterate over all addresses for the current interface
-        debug!("Interface Name: {:?}", iface.description);
-        trace!("IP: {:?}, MAC: {:?}", iface.ips[0].ip(), iface.mac.unwrap());
-        for address in iface.ips {
-            // Broadcast the message to the current address
-            let broadcast_addr = SocketAddr::new(address.broadcast(), 1234);
-            debug!("Broadcasting to {} \n", broadcast_addr);
-            socket.send_to(REQUEST_MESSAGE, broadcast_addr).expect("Failed to send broadcast");
+    for mut adapt in adapter::get_adapters() {
+        let broadcast_addr = adapt.broadcast_address();
+        if broadcast_addr.is_some() {
+            trace!("Adaptor Name: {:?}", adapt.get_adapter_name());
+            debug!("Broadcasting to: {:?}\n", broadcast_addr);
+            socket
+                .send_to(REQUEST_MESSAGE, SocketAddr::new(broadcast_addr.unwrap(), 1234))
+                .expect("Failed to send broadcast");
         }
     }
 

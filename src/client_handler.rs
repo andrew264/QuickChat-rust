@@ -4,10 +4,11 @@ use std::sync::{Arc, Mutex};
 
 use lazy_static::lazy_static;
 use log::{debug, error, trace};
+use serde_json::json;
 
-use crate::server;
 use crate::message::Message;
 use crate::message_types::MessageType;
+use crate::server;
 
 pub struct ClientHandler {
     buffer_reader: BufReader<TcpStream>,
@@ -56,7 +57,9 @@ impl ClientHandler {
                 debug!("Client {} disconnected.", self.client_name);
                 break;
             }
+            debug!("Received {} bytes from {}", amt, self.client_name);
             let messages = Message::from_bytes(&buf[..amt]);
+            debug!("Received {} messages", messages.len());
             for message in messages {
                 trace!("Received {}", message.to_string());
                 match message.get_type() {
@@ -103,8 +106,11 @@ impl ClientHandler {
 
     fn send_to_client(&mut self, message: &Message) {
         trace!("Sending {}", message.to_string());
+        let msg = message.clone();
+        let msg_arr = json!([msg]).to_string().into_bytes();
+
         let _ = match self.buffer_writer
-            .write(&*message.to_bytes())
+            .write(&msg_arr)
             .and_then(|_| self.buffer_writer.flush()) {
             Ok(_) => {}
             Err(e) => {
@@ -126,12 +132,24 @@ impl ClientHandler {
     }
 
     fn sync_messages(&mut self) {
-        trace!("Syncing messages with {}", self.client_name);
-        let messaages = MESSAGES.lock().unwrap();
-        for message in messaages.iter() {
-            self.send_to_client(&message);
-        }
-        trace!("Synced messages {} with {}", messaages.len(), self.client_name);
+        debug!("Syncing messages with {}", self.client_name);
+        let messages = MESSAGES.lock().unwrap().clone();
+        // json array of messages
+        let msg_arr = json!(messages.to_vec());
+        debug!("Sending {} messages to {}", messages.len(), self.client_name);
+        trace!("Sending {}", msg_arr.to_string());
+        let _ = match self.buffer_writer
+            .write(msg_arr.to_string().as_bytes())
+            .and_then(|_| self.buffer_writer.flush()) {
+            Ok(_) => {
+                debug!("Sent {} messages to {}", messages.len(), self.client_name);
+            }
+            Err(e) => {
+                error!("Failed to flush {}'s buffer: {}", self.client_name, e);
+            }
+        };
+
+        trace!("Synced messages {} with {}", messages.len(), self.client_name);
         self.send_to_client(&Message::builder()
             .message_type(MessageType::ClearToSend)
             .build());

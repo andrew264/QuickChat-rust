@@ -1,9 +1,9 @@
 use chrono::{Local, TimeZone};
+use log::{debug, trace};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::message_types::MessageType;
-
-static MESSAGE_SEPERATOR: &str = "::END::";
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Message {
@@ -20,10 +20,17 @@ impl Message {
 
     pub(crate) fn from_bytes(bytes: &[u8]) -> Vec<Message> {
         let str_msg = String::from_utf8_lossy(&bytes);
-        str_msg.split(MESSAGE_SEPERATOR)
-            .filter(|s| !s.is_empty())
-            .map(|s| serde_json::from_str::<Message>(s).unwrap())
-            .collect::<Vec<Message>>()
+        trace!("Received messages: {}", str_msg);
+        let v: Value = serde_json::from_str(&str_msg).unwrap();
+        let mut messages = Vec::new();
+        if let Value::Array(msg_array) = v {
+            for msg in msg_array {
+                trace!("Received message: {}", msg);
+                messages.push(serde_json::from_str::<Message>(&*msg.to_string()).unwrap())
+            }
+        }
+        debug!("Received {} messages", messages.len());
+        messages
     }
 
     pub(crate) fn to_string(&self) -> String {
@@ -74,14 +81,6 @@ impl Message {
                 format!("{}", MessageType::from_int(self.type_))
             }
         }
-    }
-
-    pub(crate) fn to_bytes(&self) -> Vec<u8> {
-        (self.to_json() + MESSAGE_SEPERATOR).as_bytes().to_vec()
-    }
-
-    fn to_json(&self) -> String {
-        serde_json::to_string(&self).unwrap()
     }
 
     fn get_timestamp(&self) -> i64 {

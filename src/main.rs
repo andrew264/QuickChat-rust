@@ -12,6 +12,7 @@ mod client_handler;
 mod client;
 mod message;
 mod message_types;
+mod adapter;
 
 fn main() {
     let mut builder = Builder::from_default_env();

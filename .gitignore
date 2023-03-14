@@ -2,6 +2,7 @@
 
 # IntelliJ IDEA
 /.idea
+/.run
 
 # Cargo.lock
 Cargo.lock
